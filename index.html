@@ -8,13 +8,14 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    .task-enter { animation: enter .22s ease-out both; }
-    @keyframes enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+    [v-cloak] { display: none; }
+    .task-enter-active, .task-leave-active { transition: opacity .18s ease, transform .18s ease; }
+    .task-enter-from, .task-leave-to { opacity: 0; transform: translateY(6px); }
     input[type="checkbox"] { accent-color: #4f46e5; }
   </style>
 </head>
 <body class="min-h-screen bg-[#f7f5f2] text-slate-900 selection:bg-indigo-100">
-  <main class="mx-auto max-w-3xl px-5 py-12 sm:px-8 sm:py-20">
+  <main id="app" v-cloak class="mx-auto max-w-3xl px-5 py-12 sm:px-8 sm:py-20">
     <header class="mb-9 flex items-start justify-between gap-4">
       <div>
         <div class="mb-3 inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-white/80 px-3 py-1.5 text-xs font-semibold uppercase tracking-[.16em] text-indigo-600 shadow-sm">
@@ -29,9 +30,9 @@
     </header>
 
     <section class="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-[0_20px_70px_-35px_rgba(15,23,42,.25)]">
-      <form id="task-form" class="flex gap-3 border-b border-slate-100 p-4 sm:p-6">
+      <form @submit.prevent="addTask" class="flex gap-3 border-b border-slate-100 p-4 sm:p-6">
         <label for="task-input" class="sr-only">Новая задача</label>
-        <input id="task-input" type="text" maxlength="120" autocomplete="off" placeholder="Добавить задачу..." class="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50">
+        <input id="task-input" v-model="newTask" type="text" maxlength="120" autocomplete="off" placeholder="Добавить задачу..." class="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50">
         <button type="submit" class="inline-flex shrink-0 items-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-100 active:scale-[.98]">
           <svg viewBox="0 0 20 20" fill="none" class="h-4 w-4" stroke="currentColor" stroke-width="2"><path d="M10 4v12M4 10h12" stroke-linecap="round"/></svg><span class="hidden sm:inline">Добавить</span>
         </button>
@@ -39,125 +40,112 @@
 
       <div class="flex flex-wrap items-center justify-between gap-3 px-4 pb-3 pt-4 sm:px-6">
         <div class="flex items-center gap-1 rounded-xl bg-slate-100 p-1" role="group" aria-label="Фильтр задач">
-          <button type="button" data-filter="all" class="filter-btn rounded-lg px-3 py-1.5 text-xs font-semibold transition">Все</button>
-          <button type="button" data-filter="active" class="filter-btn rounded-lg px-3 py-1.5 text-xs font-semibold transition">Активные</button>
-          <button type="button" data-filter="completed" class="filter-btn rounded-lg px-3 py-1.5 text-xs font-semibold transition">Готовые</button>
+          <button v-for="option in filters" :key="option.value" type="button" @click="filter = option.value" :aria-pressed="filter === option.value" :class="filter === option.value ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'" class="rounded-lg px-3 py-1.5 text-xs font-semibold transition">{{ option.label }}</button>
         </div>
-        <button id="clear-completed" type="button" class="text-xs font-medium text-slate-400 transition hover:text-rose-600">Очистить готовые</button>
+        <button type="button" @click="clearCompleted" class="text-xs font-medium text-slate-400 transition hover:text-rose-600">Очистить готовые</button>
       </div>
 
-      <ul id="task-list" class="space-y-2 px-4 pb-4 sm:px-6 sm:pb-6" aria-live="polite"></ul>
-      <div id="empty-state" class="hidden px-6 pb-9 pt-5 text-center">
+      <ul class="space-y-2 px-4 pb-4 sm:px-6 sm:pb-6" aria-live="polite">
+        <TransitionGroup name="task">
+          <li v-for="task in filteredTasks" :key="task.id" class="group flex items-center gap-3 rounded-2xl border border-slate-100 bg-white px-3 py-3 transition hover:border-slate-200 hover:bg-slate-50/70 sm:px-4">
+            <input v-model="task.done" @change="saveTasks" type="checkbox" :aria-label="task.done ? 'Отметить как активную' : 'Отметить как выполненную'" class="h-5 w-5 shrink-0 cursor-pointer rounded-md border-slate-300">
+            <span :class="task.done ? 'text-slate-400 line-through' : 'font-medium text-slate-700'" class="min-w-0 flex-1 break-words text-sm">{{ task.text }}</span>
+            <button type="button" @click="removeTask(task.id)" :aria-label="'Удалить задачу: ' + task.text" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-300 opacity-100 transition hover:bg-rose-50 hover:text-rose-500 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100">
+              <svg viewBox="0 0 20 20" fill="none" class="h-4 w-4" stroke="currentColor" stroke-width="1.7"><path d="M4 6h12M8 6V4h4v2m-6 0 1 10h6l1-10M9 9v4m2-4v4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </li>
+        </TransitionGroup>
+      </ul>
+
+      <div v-if="filteredTasks.length === 0" class="px-6 pb-9 pt-5 text-center">
         <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
           <svg viewBox="0 0 24 24" fill="none" class="h-6 w-6" stroke="currentColor" stroke-width="1.7"><path d="M8 12h8M12 8v8" stroke-linecap="round"/><circle cx="12" cy="12" r="9"/></svg>
         </div>
-        <p id="empty-title" class="text-sm font-semibold text-slate-700">Пока нет задач</p>
-        <p id="empty-copy" class="mt-1 text-xs text-slate-400">Добавь первую задачу выше.</p>
+        <p class="text-sm font-semibold text-slate-700">{{ emptyTitle }}</p>
+        <p class="mt-1 text-xs text-slate-400">{{ emptyCopy }}</p>
       </div>
 
       <footer class="flex items-center justify-between border-t border-slate-100 bg-slate-50/70 px-4 py-4 text-xs text-slate-400 sm:px-6">
-        <span id="remaining-count">0 задач осталось</span>
+        <span>{{ remainingLabel }}</span>
         <span class="inline-flex items-center gap-1.5"><span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span> Список сохраняется в этом браузере</span>
       </footer>
     </section>
     <p class="mt-5 text-center text-xs text-slate-400">Просто добавь задачу — и двигайся шаг за шагом.</p>
   </main>
 
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
   <script>
+    const { createApp } = Vue;
     const STORAGE_KEY = "simple-todo-list-v1";
     const starterTasks = [
       { id: 1, text: "Составить план на день", done: true },
       { id: 2, text: "Добавить первую задачу", done: false },
       { id: 3, text: "Сделать небольшой перерыв", done: false }
     ];
-    let tasks = starterTasks;
-    let filter = "all";
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) tasks = JSON.parse(saved);
-    } catch (_) {}
 
-    const list = document.getElementById("task-list");
-    const form = document.getElementById("task-form");
-    const input = document.getElementById("task-input");
-    const empty = document.getElementById("empty-state");
-    const emptyTitle = document.getElementById("empty-title");
-    const emptyCopy = document.getElementById("empty-copy");
-
-    function save() {
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks)); } catch (_) {}
-    }
-    function render() {
-      list.replaceChildren();
-      const visible = tasks.filter(task => filter === "all" || (filter === "active" ? !task.done : task.done));
-      visible.forEach(task => {
-        const item = document.createElement("li");
-        item.className = "task-enter group flex items-center gap-3 rounded-2xl border border-slate-100 bg-white px-3 py-3 transition hover:border-slate-200 hover:bg-slate-50/70 sm:px-4";
-
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.checked = task.done;
-        checkbox.setAttribute("aria-label", task.done ? "Отметить как активную" : "Отметить как выполненную");
-        checkbox.className = "h-5 w-5 shrink-0 cursor-pointer rounded-md border-slate-300";
-        checkbox.addEventListener("change", () => {
-          task.done = checkbox.checked;
-          save(); render();
-        });
-
-        const text = document.createElement("span");
-        text.textContent = task.text;
-        text.className = "min-w-0 flex-1 break-words text-sm " + (task.done ? "text-slate-400 line-through" : "font-medium text-slate-700");
-
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.setAttribute("aria-label", "Удалить задачу: " + task.text);
-        remove.className = "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-300 opacity-100 transition hover:bg-rose-50 hover:text-rose-500 sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100";
-        remove.innerHTML = '<svg viewBox="0 0 20 20" fill="none" class="h-4 w-4" stroke="currentColor" stroke-width="1.7"><path d="M4 6h12M8 6V4h4v2m-6 0 1 10h6l1-10M9 9v4m2-4v4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-        remove.addEventListener("click", () => {
-          tasks = tasks.filter(item => item.id !== task.id);
-          save(); render();
-        });
-
-        item.append(checkbox, text, remove);
-        list.append(item);
-      });
-
-      const remaining = tasks.filter(task => !task.done).length;
-      document.getElementById("remaining-count").textContent = remaining + (remaining === 1 ? " задача осталась" : remaining >= 2 && remaining <= 4 ? " задачи осталось" : " задач осталось");
-      empty.classList.toggle("hidden", visible.length !== 0);
-      if (visible.length === 0) {
-        if (tasks.length === 0) {
-          emptyTitle.textContent = "Пока нет задач";
-          emptyCopy.textContent = "Добавь первую задачу выше.";
-        } else {
-          emptyTitle.textContent = "Здесь пока пусто";
-          emptyCopy.textContent = filter === "active" ? "Все задачи уже выполнены." : "Нет выполненных задач.";
+    createApp({
+      data() {
+        let tasks = starterTasks;
+        try {
+          const saved = localStorage.getItem(STORAGE_KEY);
+          if (saved) tasks = JSON.parse(saved);
+        } catch (_) {}
+        return {
+          tasks,
+          newTask: "",
+          filter: "all",
+          filters: [
+            { value: "all", label: "Все" },
+            { value: "active", label: "Активные" },
+            { value: "completed", label: "Готовые" }
+          ]
+        };
+      },
+      computed: {
+        filteredTasks() {
+          if (this.filter === "active") return this.tasks.filter(task => !task.done);
+          if (this.filter === "completed") return this.tasks.filter(task => task.done);
+          return this.tasks;
+        },
+        remaining() {
+          return this.tasks.filter(task => !task.done).length;
+        },
+        remainingLabel() {
+          const n = this.remaining;
+          const word = n % 10 === 1 && n % 100 !== 11 ? "задача осталась" : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? "задачи осталось" : "задач осталось";
+          return `${n} ${word}`;
+        },
+        emptyTitle() {
+          if (this.tasks.length === 0) return "Пока нет задач";
+          return "Здесь пока пусто";
+        },
+        emptyCopy() {
+          if (this.tasks.length === 0) return "Добавь первую задачу выше.";
+          return this.filter === "active" ? "Все задачи уже выполнены." : "Нет выполненных задач.";
+        }
+      },
+      methods: {
+        saveTasks() {
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.tasks)); } catch (_) {}
+        },
+        addTask() {
+          const text = this.newTask.trim();
+          if (!text) return;
+          this.tasks.unshift({ id: Date.now(), text, done: false });
+          this.newTask = "";
+          this.filter = "all";
+          this.saveTasks();
+        },
+        removeTask(id) {
+          this.tasks = this.tasks.filter(task => task.id !== id);
+          this.saveTasks();
+        },
+        clearCompleted() {
+          this.tasks = this.tasks.filter(task => !task.done);
+          this.saveTasks();
         }
       }
-      document.querySelectorAll(".filter-btn").forEach(button => {
-        const selected = button.dataset.filter === filter;
-        button.className = "filter-btn rounded-lg px-3 py-1.5 text-xs font-semibold transition " + (selected ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800");
-        button.setAttribute("aria-pressed", String(selected));
-      });
-    }
-
-    form.addEventListener("submit", event => {
-      event.preventDefault();
-      const text = input.value.trim();
-      if (!text) { input.focus(); return; }
-      tasks.unshift({ id: Date.now(), text, done: false });
-      input.value = "";
-      filter = "all";
-      save(); render(); input.focus();
-    });
-    document.querySelectorAll(".filter-btn").forEach(button => {
-      button.addEventListener("click", () => { filter = button.dataset.filter; render(); });
-    });
-    document.getElementById("clear-completed").addEventListener("click", () => {
-      tasks = tasks.filter(task => !task.done);
-      save(); render();
-    });
-    render();
+    }).mount("#app");
   </script>
 </body>
 </html>
