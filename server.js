@@ -2,9 +2,10 @@
 
 const http = require('node:http');
 const { readFile } = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 
-const host = process.env.HOST || '127.0.0.1';
+const host = process.env.HOST || '0.0.0.0';
 const port = Number(process.env.PORT || 3000);
 const indexPath = path.join(__dirname, 'index.html');
 
@@ -46,6 +47,10 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`Todo list server is running at http://${host}:${port}`);
+  console.log(`Todo list server is running on port ${port} (${host})`);
+  const addresses = Object.values(os.networkInterfaces())
+    .flatMap(interfaces => interfaces || [])
+    .filter(info => info.family === 'IPv4' && !info.internal)
+    .map(info => info.address);
+  for (const address of addresses) console.log(`http://${address}:${port}`);
 });
-
